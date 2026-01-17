@@ -17,9 +17,10 @@
         // Hush CMake
 		"cmake.configureOnOpen": false,
 
-		// IntelliSense
+		// IntelliSense - disable Microsoft C/C++ IntelliSense since we use clangd
+		"C_Cpp.intelliSenseEngine": "disabled",
 		"C_Cpp.default.compilerPath": "${userHome}/zephyr-sdk-0.17.4/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc",
-		"C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+		"C_Cpp.default.compileCommands": "${workspaceFolder:zephyrproject}/build/compile_commands.json",
 
         //Python venv activation
         "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python3",
@@ -135,7 +136,6 @@
     },
 	"extensions": {
 		"recommendations": [
-			"ms-vscode.cpptools-extension-pack",
 			"ms-python.python",
 			"ms-vscode.vscode-embedded-tools",
 			"ms-vscode.vscode-serial-monitor",
