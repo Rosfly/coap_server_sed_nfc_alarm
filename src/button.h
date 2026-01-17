@@ -33,6 +33,7 @@ int coap_btn_get_state(const char *addr, int led_id, int *state);
 
 #ifdef CONFIG_OT_COAP_SAMPLE_SERVER
 void coap_btn_reg_rsc(void);
+void btn_notify_observers(void);
 #endif
 
 #endif /* COAP_BUTTON_H */

@@ -9,6 +9,7 @@
 LOG_MODULE_DECLARE(coap);
 
 #include "coap_utils.h"
+#include "coap_observe.h"
 #include "led.h"
 
 #ifdef CONFIG_OT_COAP_SAMPLE_SERVER
@@ -20,6 +21,7 @@ struct led_rsc_data {
 struct led_rsc_ctx {
 	struct led_rsc_data *led;
 	int count;
+	struct coap_observe_resource observe;
 };
 #endif
 
@@ -65,6 +67,9 @@ static int led_init(otCoapResource *rsc)
 	return 0;
 }
 
+/* Forward declaration */
+static void led_notify_observers(struct led_rsc_ctx *led_ctx);
+
 static int led_handler_put(void *ctx, uint8_t *buf, int size)
 {
 	struct json_led_state led_data;
@@ -98,14 +103,16 @@ static int led_handler_put(void *ctx, uint8_t *buf, int size)
 		LOG_ERR("Set an unsupported LED state: %x", led_data.state);
 	}
 
+	/* Notify observers of state change */
+	if (ret == 0) {
+		led_notify_observers(led_ctx);
+	}
+
 	return ret;
 }
 
-static int led_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
+static int led_build_state_payload(struct led_rsc_ctx *led_ctx, uint8_t *buf, int buf_size)
 {
-	uint8_t buf[COAP_MAX_BUF_SIZE];
-	struct led_rsc_ctx *led_ctx = ctx;
-
 	struct json_led_get led_data = {
 		.device_id = coap_device_id(),
 	};
@@ -117,9 +124,43 @@ static int led_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_i
 	led_data.count = led_ctx->count;
 
 	json_obj_encode_buf(json_led_get_descr, ARRAY_SIZE(json_led_get_descr), &led_data, buf,
-			    COAP_MAX_BUF_SIZE);
+			    buf_size);
 
-	return coap_resp_send(msg, msg_info, buf, strlen(buf) + 1);
+	return strlen((char *)buf) + 1;
+}
+
+static void led_notify_observers(struct led_rsc_ctx *led_ctx)
+{
+	uint8_t buf[COAP_MAX_BUF_SIZE];
+	int len;
+
+	if (led_ctx->observe.observer_count == 0) {
+		return;
+	}
+
+	len = led_build_state_payload(led_ctx, buf, COAP_MAX_BUF_SIZE);
+	coap_observe_notify(&led_ctx->observe, buf, len);
+}
+
+static int led_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
+{
+	uint8_t buf[COAP_MAX_BUF_SIZE];
+	struct led_rsc_ctx *led_ctx = ctx;
+	uint32_t observe_seq = 0;
+	int len;
+	int ret;
+
+	/* Handle Observe registration/deregistration */
+	ret = coap_observe_handle(&led_ctx->observe, msg, msg_info, &observe_seq);
+
+	len = led_build_state_payload(led_ctx, buf, COAP_MAX_BUF_SIZE);
+
+	/* If observe registered (ret == 0), include Observe option in response */
+	if (ret == 0) {
+		return coap_resp_send_observe(msg, msg_info, buf, len, observe_seq);
+	}
+
+	return coap_resp_send(msg, msg_info, buf, len);
 }
 
 static void led_handler(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
@@ -156,6 +197,7 @@ void coap_led_reg_rsc(void)
 
 	LOG_INF("Registering LED rsc");
 	led_init(&led_rsc);
+	coap_observe_init(&led_rsc_ctx.observe, LED_URI);
 	otCoapAddResource(ot, &led_rsc);
 }
 #endif /* CONFIG_OT_COAP_SAMPLE_SERVER */

@@ -11,7 +11,6 @@ LOG_MODULE_DECLARE(coap);
 
 #include "coap_utils.h"
 
-static uint8_t coap_buf[COAP_MAX_BUF_SIZE];
 static uint8_t coap_dev_id[COAP_DEVICE_ID_SIZE];
 
 #ifdef CONFIG_OT_COAP_SAMPLE_SERVER
@@ -155,6 +154,14 @@ int coap_resp_send(otMessage *req, const otMessageInfo *req_info, uint8_t *buf, 
 		goto err;
 	}
 
+	/* Add Content-Format option: application/json (50) */
+	err = otCoapMessageAppendContentFormatOption(resp, OT_COAP_OPTION_CONTENT_FORMAT_JSON);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to append content-format: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
 	err = otCoapMessageSetPayloadMarker(resp);
 	if (err != OT_ERROR_NONE) {
 		LOG_ERR("Failed to set payload marker: %s", otThreadErrorToString(err));
@@ -183,23 +190,154 @@ err:
 	return ret;
 }
 
+int coap_resp_send_observe(otMessage *req, const otMessageInfo *req_info, uint8_t *buf, int len, uint32_t observe_seq)
+{
+	otInstance *ot;
+	otMessage *resp;
+	otCoapCode resp_code;
+	otCoapType resp_type;
+	otError err;
+	int ret;
+
+	ot = openthread_get_default_instance();
+	if (!ot) {
+		LOG_ERR("Failed to get an OpenThread instance");
+		return -ENODEV;
+	}
+
+	resp = otCoapNewMessage(ot, NULL);
+	if (!resp) {
+		LOG_ERR("Failed to allocate a new CoAP message");
+		return -ENOMEM;
+	}
+
+	switch (otCoapMessageGetType(req)) {
+	case OT_COAP_TYPE_CONFIRMABLE:
+		resp_type = OT_COAP_TYPE_ACKNOWLEDGMENT;
+		break;
+	case OT_COAP_TYPE_NON_CONFIRMABLE:
+		resp_type = OT_COAP_TYPE_NON_CONFIRMABLE;
+		break;
+	default:
+		LOG_ERR("Invalid message type");
+		ret = -EINVAL;
+		goto err;
+	}
+
+	resp_code = OT_COAP_CODE_CONTENT;
+
+	err = otCoapMessageInitResponse(resp, req, resp_type, resp_code);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to initialize the response: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
+	/* Add Observe option - THIS IS CRITICAL for observe to work */
+	err = otCoapMessageAppendObserveOption(resp, observe_seq);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to append observe option: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
+	/* Add Content-Format option: application/json (50) */
+	err = otCoapMessageAppendContentFormatOption(resp, OT_COAP_OPTION_CONTENT_FORMAT_JSON);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to append content-format: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
+	err = otCoapMessageSetPayloadMarker(resp);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to set payload marker: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
+	err = otMessageAppend(resp, buf, len);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to append payload to response: %s", otThreadErrorToString(err));
+		ret = -EBADMSG;
+		goto err;
+	}
+
+	err = otCoapSendResponse(ot, resp, req_info);
+	if (err != OT_ERROR_NONE) {
+		LOG_ERR("Failed to send the response: %s", otThreadErrorToString(err));
+		ret = -EIO;
+		goto err;
+	}
+
+	return 0;
+
+err:
+	otMessageFree(resp);
+	return ret;
+}
+
+int coap_error_send(otMessage *req, const otMessageInfo *req_info, otCoapCode error_code)
+{
+	otInstance *ot;
+	otMessage *resp;
+	otCoapType resp_type;
+	otError err;
+
+	ot = openthread_get_default_instance();
+	if (!ot) {
+		return -ENODEV;
+	}
+
+	resp = otCoapNewMessage(ot, NULL);
+	if (!resp) {
+		return -ENOMEM;
+	}
+
+	resp_type = (otCoapMessageGetType(req) == OT_COAP_TYPE_CONFIRMABLE)
+		    ? OT_COAP_TYPE_ACKNOWLEDGMENT
+		    : OT_COAP_TYPE_NON_CONFIRMABLE;
+
+	err = otCoapMessageInitResponse(resp, req, resp_type, error_code);
+	if (err != OT_ERROR_NONE) {
+		otMessageFree(resp);
+		return -EBADMSG;
+	}
+
+	err = otCoapSendResponse(ot, resp, req_info);
+	if (err != OT_ERROR_NONE) {
+		otMessageFree(resp);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 int coap_req_handler(void *ctx, otMessage *msg, const otMessageInfo *msg_info,
 		     coap_req_handler_put put_fn, coap_req_handler_get get_fn)
 {
 	otCoapCode msg_code = otCoapMessageGetCode(msg);
 	otCoapType msg_type = otCoapMessageGetType(msg);
+	uint8_t buf[COAP_MAX_BUF_SIZE]; /* Stack buffer for thread safety */
 	int ret;
 
 	if (msg_type != OT_COAP_TYPE_CONFIRMABLE && msg_type != OT_COAP_TYPE_NON_CONFIRMABLE) {
+		coap_error_send(msg, msg_info, OT_COAP_CODE_BAD_REQUEST);
 		return -EINVAL;
 	}
 
 	if (msg_code == OT_COAP_CODE_PUT && put_fn) {
 		int len = otMessageGetLength(msg) - otMessageGetOffset(msg);
 
-		otMessageRead(msg, otMessageGetOffset(msg), coap_buf, len);
-		ret = put_fn(ctx, coap_buf, len);
+		if (len > COAP_MAX_BUF_SIZE) {
+			coap_error_send(msg, msg_info, OT_COAP_CODE_REQUEST_TOO_LARGE);
+			return -ENOMEM;
+		}
+
+		otMessageRead(msg, otMessageGetOffset(msg), buf, len);
+		ret = put_fn(ctx, buf, len);
 		if (ret) {
+			coap_error_send(msg, msg_info, OT_COAP_CODE_BAD_REQUEST);
 			return ret;
 		}
 
@@ -214,6 +352,7 @@ int coap_req_handler(void *ctx, otMessage *msg, const otMessageInfo *msg_info,
 		return get_fn(ctx, msg, msg_info);
 	}
 
+	coap_error_send(msg, msg_info, OT_COAP_CODE_METHOD_NOT_ALLOWED);
 	return -EINVAL;
 }
 

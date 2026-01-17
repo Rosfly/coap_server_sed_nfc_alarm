@@ -11,6 +11,9 @@
 		{
 			"path": ".",
 			"name": "current project"
+		},
+		{
+			"path": "../thread-coap-bridge-addon"
 		}
 	],
 	"settings": {

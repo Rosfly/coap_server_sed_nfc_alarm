@@ -21,6 +21,7 @@ int coap_init(void);
 int coap_req_handler(void *ctx, otMessage *msg, const otMessageInfo *msg_info,
 		     coap_req_handler_put put_fn, coap_req_handler_get get_fn);
 int coap_resp_send(otMessage *req, const otMessageInfo *req_info, uint8_t *buf, int len);
+int coap_resp_send_observe(otMessage *req, const otMessageInfo *req_info, uint8_t *buf, int len, uint32_t observe_seq);
 int coap_put_req_send(const char *addr, const char *uri, uint8_t *buf, int len,
 		      otCoapResponseHandler handler, void *ctx);
 int coap_get_req_send(const char *addr, const char *uri, uint8_t *buf, int len,
