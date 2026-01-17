@@ -9,6 +9,7 @@
 
 #include <zephyr/net/openthread.h>
 #include <openthread/coap.h>
+#include <openthread/platform/radio.h>
 
 #define COAP_MAX_BUF_SIZE   128
 #define COAP_DEVICE_ID_SIZE 25
