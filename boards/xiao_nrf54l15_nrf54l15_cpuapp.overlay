@@ -14,6 +14,19 @@
 	aliases {
 		sw0 = &usr_btn;
 	};
+
+	/* Battery voltage measurement via voltage divider
+	 * Schematic: VBAT -> TPS22916C -> R5(10K) -> ADC -> R6(10K) -> GND
+	 * Divider ratio: 2.0 (full_ohms / output_ohms = 20K / 10K)
+	 * Battery voltage = ADC reading * 2.0
+	 */
+	vbat: vbat {
+		compatible = "voltage-divider";
+		io-channels = <&adc 7>;    /* AIN7 - P1.14 */
+		output-ohms = <10000>;     /* R6 - 10K bottom resistor */
+		full-ohms = <20000>;       /* R5 + R6 - 20K total */
+		power-gpios = <&gpio1 15 GPIO_ACTIVE_HIGH>; /* P1.15 - TPS22916C enable */
+	};
 };
 
 /* Fix LED polarity - hardware is actually active-low (cathode to GPIO) */
@@ -31,4 +44,21 @@
 
 &temp {
 	status = "okay";
+};
+
+/* ADC configuration for battery voltage measurement */
+&adc {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	channel@7 {
+		reg = <7>;
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,input-positive = <NRF_SAADC_AIN7>; /* P1.14 */
+		zephyr,resolution = <12>;
+		zephyr,oversampling = <4>;  /* 4x oversampling for noise reduction */
+	};
 };

@@ -22,6 +22,7 @@ struct btn_rsc_ctx {
 	struct btn_rsc_data *btn;
 	int count;
 	struct coap_observe_resource observe;
+	struct k_work notify_work;  /* Work item for deferred notification */
 };
 
 static const struct json_obj_descr json_btn_state_descr[] = {
@@ -41,6 +42,7 @@ static K_SEM_DEFINE(btn_get_sem, 0, 1);
 
 /* Forward declarations */
 static struct btn_rsc_ctx btn_rsc_ctx;
+static void btn_notify_work_handler(struct k_work *work);
 
 static int btn_build_state_payload(struct btn_rsc_ctx *btn_ctx, uint8_t *buf, int buf_size)
 {
@@ -74,6 +76,12 @@ void btn_notify_observers(void)
 
 	len = btn_build_state_payload(&btn_rsc_ctx, buf, COAP_MAX_BUF_SIZE);
 	coap_observe_notify(&btn_rsc_ctx.observe, buf, len);
+}
+
+/* Work handler for deferred notification (called from thread context) */
+static void btn_notify_work_handler(struct k_work *work)
+{
+	btn_notify_observers();
 }
 
 static int btn_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
@@ -124,11 +132,11 @@ static otCoapResource btn_rsc = {
 	.mNext = NULL,
 };
 
-/* GPIO interrupt callback - called when button state changes */
+/* GPIO interrupt callback - called when button state changes (ISR context) */
 static void btn_gpio_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-	/* Notify all observers of the button state change */
-	btn_notify_observers();
+	/* Submit work to system workqueue - cannot call CoAP functions from ISR */
+	k_work_submit(&btn_rsc_ctx.notify_work);
 }
 
 static int button_init_rsc(otCoapResource *rsc)
@@ -184,6 +192,10 @@ void coap_btn_reg_rsc(void)
 
 	button_init_rsc(&btn_rsc);
 	coap_observe_init(&btn_rsc_ctx.observe, BTN_URI);
+
+	/* Initialize work item for deferred notification from ISR */
+	k_work_init(&btn_rsc_ctx.notify_work, btn_notify_work_handler);
+
 	LOG_INF("Registering button rsc with observe support");
 	otCoapAddResource(ot, &btn_rsc);
 }
