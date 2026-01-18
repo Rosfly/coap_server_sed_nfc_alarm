@@ -290,10 +290,8 @@ int coap_led_get_state(const char *addr, int led_id, int *state)
 		return ret;
 	}
 
-	/* Wait up to 30 seconds for CoAP response
-	 * This allows for multiple retries and temporary network issues
-	 */
-	ret = k_sem_take(&led_get_sem, K_SECONDS(30));
+	/* Wait up to 10 seconds for CoAP response (CoAP default ~4-8s with retries) */
+	ret = k_sem_take(&led_get_sem, K_SECONDS(10));
 	if (ret == -EAGAIN) {
 		LOG_WRN("Timeout waiting for LED state response");
 		return -ETIMEDOUT;

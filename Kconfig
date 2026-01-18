@@ -22,6 +22,15 @@ config OT_COAP_SAMPLE_BATTERY
 	bool "Enable battery sensor support"
 	default y
 
+config OT_COAP_SAMPLE_SHELL
+	bool "Enable CoAP shell commands for debugging"
+	default y
+	depends on SHELL
+	help
+	  Enable shell commands (ot_coap) for testing LED control
+	  and button state from the command line. Disable for
+	  production builds to save ~150 lines of code.
+
 endmenu
 
 source "Kconfig.zephyr"

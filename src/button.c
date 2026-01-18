@@ -81,6 +81,7 @@ void btn_notify_observers(void)
 /* Work handler for deferred notification (called from thread context) */
 static void btn_notify_work_handler(struct k_work *work)
 {
+	LOG_INF("btn_notify_work_handler called, observers=%d", btn_rsc_ctx.observe.observer_count);
 	btn_notify_observers();
 }
 
@@ -92,16 +93,21 @@ static int btn_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_i
 	int len;
 	int ret;
 
+	LOG_INF("btn_handler_get called");
+
 	/* Handle Observe registration/deregistration */
 	ret = coap_observe_handle(&btn_ctx->observe, msg, msg_info, &observe_seq);
+	LOG_INF("coap_observe_handle returned %d, observers=%d", ret, btn_ctx->observe.observer_count);
 
 	len = btn_build_state_payload(btn_ctx, buf, COAP_MAX_BUF_SIZE);
 
 	/* If observe registered (ret == 0), include Observe option in response */
 	if (ret == 0) {
+		LOG_INF("Sending observe response with seq=%u", observe_seq);
 		return coap_resp_send_observe(msg, msg_info, buf, len, observe_seq);
 	}
 
+	LOG_INF("Sending regular response (no observe)");
 	return coap_resp_send(msg, msg_info, buf, len);
 }
 
@@ -135,8 +141,10 @@ static otCoapResource btn_rsc = {
 /* GPIO interrupt callback - called when button state changes (ISR context) */
 static void btn_gpio_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
+	LOG_INF("Button GPIO interrupt fired, pins=0x%x", pins);
 	/* Submit work to system workqueue - cannot call CoAP functions from ISR */
-	k_work_submit(&btn_rsc_ctx.notify_work);
+	int ret = k_work_submit(&btn_rsc_ctx.notify_work);
+	LOG_INF("k_work_submit returned %d", ret);
 }
 
 static int button_init_rsc(otCoapResource *rsc)
@@ -275,7 +283,7 @@ int coap_btn_get_state(const char *addr, int btn_id, int *state)
 	}
 
 	/* Wait up to 30 seconds for CoAP response */
-	ret = k_sem_take(&btn_get_sem, K_SECONDS(30));
+	ret = k_sem_take(&btn_get_sem, K_SECONDS(10));
 	if (ret == -EAGAIN) {
 		LOG_WRN("Timeout waiting for button state response");
 		return -ETIMEDOUT;
