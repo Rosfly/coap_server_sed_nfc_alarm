@@ -152,6 +152,7 @@ static int led_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_i
 
 	/* Handle Observe registration/deregistration */
 	ret = coap_observe_handle(&led_ctx->observe, msg, msg_info, &observe_seq);
+	LOG_INF("led observe_handle ret=%d, observers=%d", ret, led_ctx->observe.observer_count);
 
 	len = led_build_state_payload(led_ctx, buf, COAP_MAX_BUF_SIZE);
 

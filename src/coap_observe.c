@@ -129,36 +129,30 @@ static int get_observe_option(otMessage *msg, uint32_t *observe_value)
 	const otCoapOption *option;
 	otCoapOptionIterator iterator;
 	otError err;
+	uint64_t value;
 
 	err = otCoapOptionIteratorInit(&iterator, msg);
 	if (err != OT_ERROR_NONE) {
+		LOG_DBG("Option iterator init failed: %d", err);
 		return -EINVAL;
 	}
 
 	/* Find Observe option (option number 6) */
 	option = otCoapOptionIteratorGetFirstOptionMatching(&iterator, OT_COAP_OPTION_OBSERVE);
 	if (option == NULL) {
+		/* No Observe option - this is normal for regular GET requests */
 		return -ENOENT;
 	}
 
-	/* Read the option value */
-	uint8_t buf[4] = {0};
-	uint16_t len = option->mLength;
-
-	if (len > 4) {
-		return -EINVAL;
-	}
-
-	err = otCoapOptionIteratorGetOptionValue(&iterator, buf);
+	/* Use OpenThread's built-in uint value extraction */
+	err = otCoapOptionIteratorGetOptionUintValue(&iterator, &value);
 	if (err != OT_ERROR_NONE) {
+		LOG_WRN("Failed to get Observe option value: %d", err);
 		return -EINVAL;
 	}
 
-	/* Decode variable-length integer (big-endian) */
-	*observe_value = 0;
-	for (int i = 0; i < len; i++) {
-		*observe_value = (*observe_value << 8) | buf[i];
-	}
+	*observe_value = (uint32_t)value;
+	LOG_DBG("Observe option value: %u", *observe_value);
 
 	return 0;
 }

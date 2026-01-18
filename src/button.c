@@ -93,21 +93,17 @@ static int btn_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_i
 	int len;
 	int ret;
 
-	LOG_INF("btn_handler_get called");
-
 	/* Handle Observe registration/deregistration */
 	ret = coap_observe_handle(&btn_ctx->observe, msg, msg_info, &observe_seq);
-	LOG_INF("coap_observe_handle returned %d, observers=%d", ret, btn_ctx->observe.observer_count);
+	LOG_INF("btn observe_handle ret=%d, observers=%d", ret, btn_ctx->observe.observer_count);
 
 	len = btn_build_state_payload(btn_ctx, buf, COAP_MAX_BUF_SIZE);
 
 	/* If observe registered (ret == 0), include Observe option in response */
 	if (ret == 0) {
-		LOG_INF("Sending observe response with seq=%u", observe_seq);
 		return coap_resp_send_observe(msg, msg_info, buf, len, observe_seq);
 	}
 
-	LOG_INF("Sending regular response (no observe)");
 	return coap_resp_send(msg, msg_info, buf, len);
 }
 
