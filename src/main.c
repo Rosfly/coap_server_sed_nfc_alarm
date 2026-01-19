@@ -23,6 +23,10 @@ LOG_MODULE_REGISTER(coap);
 #include "battery.h"
 #endif /* CONFIG_OT_COAP_SAMPLE_BATTERY */
 
+#ifdef CONFIG_OT_COAP_SAMPLE_UPTIME
+#include "uptime.h"
+#endif /* CONFIG_OT_COAP_SAMPLE_UPTIME */
+
 
 int main(void)
 {
@@ -46,6 +50,9 @@ int main(void)
 	coap_battery_reg_rsc();
 	coap_voltage_reg_rsc();
 #endif /* CONFIG_OT_COAP_SAMPLE_BATTERY */
+#ifdef CONFIG_OT_COAP_SAMPLE_UPTIME
+	coap_uptime_reg_rsc();
+#endif /* CONFIG_OT_COAP_SAMPLE_UPTIME */
 
 	/* Register .well-known/core resource discovery last */
 	coap_wellknown_reg_rsc();

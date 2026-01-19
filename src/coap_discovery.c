@@ -40,6 +40,11 @@ static int wellknown_handler_get(void *ctx, otMessage *msg, const otMessageInfo 
 			"</battery>;rt=\"battery\",</voltage>;rt=\"voltage\",");
 #endif
 
+#ifdef CONFIG_OT_COAP_SAMPLE_UPTIME
+	len += snprintf((char *)(buf + len), COAP_MAX_BUF_SIZE - len,
+			"</uptime>;rt=\"uptime\",");
+#endif
+
 	/* Remove trailing comma if present */
 	if (len > 0 && buf[len - 1] == ',') {
 		buf[len - 1] = '\0';

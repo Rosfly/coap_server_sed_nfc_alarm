@@ -36,16 +36,51 @@ VBAT ─── TPS22916C ─── R5(10K) ───┬─── P1.14 (AIN7)
 
 ## Building
 
+### Standard Build (Battery-Optimized)
+
+Default build disables UART/logging for battery-only boot:
+
 ```bash
 cd ~/zephyrproject
 
-# Build for XIAO nRF54L15
-west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
-    -s zephyr/samples/rosprojects/coap_client
+# Build for XIAO nRF54L15 with expansion board shield
+.venv/bin/west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
+    --shield seeed_xiao_expansion_board \
+    -s ~/dev/coap_server
 
 # Flash
-west flash
+.venv/bin/west flash
 ```
+
+### Debug Build (USB/UART Logging)
+
+For development with USB serial console. **Note**: This build will NOT boot from battery alone - USB connection required.
+
+```bash
+cd ~/zephyrproject
+
+# Build with UART overlay for debugging
+.venv/bin/west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
+    --shield seeed_xiao_expansion_board \
+    -s ~/dev/coap_server \
+    -- -DOVERLAY_CONFIG="prj_uart.conf"
+
+# Flash
+.venv/bin/west flash
+
+# Monitor serial output (115200 baud)
+# Use VSCode Serial Monitor or: screen /dev/ttyACM0 115200
+```
+
+### Optional Shell Commands
+
+To enable debug shell commands, edit `boards/xiao_nrf54l15_nrf54l15_cpuapp.conf`:
+
+```kconfig
+CONFIG_OT_COAP_SAMPLE_SHELL=y
+```
+
+**Warning**: Shell requires UART which prevents battery-only boot.
 
 ## First-Time Commissioning
 
@@ -153,11 +188,20 @@ Percentage is calculated using a 21-point LiPo discharge curve lookup table with
 {"device_id": "f4ce3616e67c7a1c", "value": 3850}
 ```
 
+### Uptime Resource (`/uptime`)
+
+**GET** - Returns milliseconds since device boot:
+```json
+{"device_id": "f4ce3616e67c7a1c", "value": 123456}
+```
+
+Used by the bridge to detect device reboots. When the bridge polls uptime and sees it decrease, it knows the device rebooted and re-registers CoAP Observe subscriptions.
+
 ### Discovery Resource (`/.well-known/core`)
 
 **GET** - Returns CoRE Link Format:
 ```
-</led>;rt="led";if="actuator",</sw>;rt="button";if="sensor",</battery>;rt="battery";if="sensor",</voltage>;rt="voltage";if="sensor"
+</led>;rt="led",</sw>;rt="button",</battery>;rt="battery",</voltage>;rt="voltage",</uptime>;rt="uptime"
 ```
 
 ## Configuration
@@ -257,6 +301,14 @@ This firmware is designed to work with the [Thread CoAP Bridge](https://github.c
 The bridge uses different strategies for different resources:
 - **LED/Button**: CoAP Observe for real-time push notifications
 - **Battery/Voltage**: Polling (configurable interval, default 60s)
+
+### Observe Re-Registration
+
+The bridge automatically re-registers as an observer every 60 seconds. This handles:
+- **Device reboots**: Device loses observer list on restart, bridge re-registers within 60s
+- **Network hiccups**: Connection issues are detected and observation is re-established
+
+This ensures button presses and LED state changes are always reported, even after the device reboots or temporarily loses network connectivity.
 
 ## License
 

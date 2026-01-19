@@ -20,6 +20,7 @@ target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_SERVER app PRIVATE src/coap_discovery
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_LED app PRIVATE src/led.c)
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_SW app PRIVATE src/button.c)
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_BATTERY app PRIVATE src/battery.c)
+target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_UPTIME app PRIVATE src/uptime.c)
 
 include(${ZEPHYR_BASE}/samples/net/common/common.cmake)
 

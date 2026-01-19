@@ -22,6 +22,14 @@ config OT_COAP_SAMPLE_BATTERY
 	bool "Enable battery sensor support"
 	default y
 
+config OT_COAP_SAMPLE_UPTIME
+	bool "Enable uptime resource"
+	default y
+	help
+	  Enable the /uptime CoAP resource that returns milliseconds
+	  since boot. Used by the bridge to detect device reboots
+	  and re-register CoAP Observe subscriptions.
+
 config OT_COAP_SAMPLE_SHELL
 	bool "Enable CoAP shell commands for debugging"
 	default y
