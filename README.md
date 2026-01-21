@@ -2,16 +2,18 @@
 
 A Zephyr-based Thread CoAP server designed for integration with Home Assistant via the Thread CoAP Bridge add-on. Supports LED control, button input, battery monitoring with real ADC measurements, and automatic network reconnection.
 
+CoAP Observe mechanism is lost after device reset (e.g. battery connection on device installation), cause CoAP server forgets the registered observe resources (button in this case) and will never push again a message on button press unless the client re-registers observe demand. That's why the client monitors uptime: so every minute the client on HA polls the server battery voltage and battery percentage along with uptime. If the uptime declines, that means the device reset and the client immediately refreshes the observe demand. So ~1 minute after reset the server should be ready to push a message on button press.
+
 ## Features
 
 - **Thread MTD Mode**: Runs as Minimal Thread Device (child) for mobile/battery-powered use
-- **CoAP Server**: Exposes `/led`, `/sw` (button), `/battery`, and `/voltage` resources
+- **CoAP Server**: Exposes `/led`, `/sw` (button), uptime, `/battery`, and `/voltage` resources
 - **CoAP Observe**: Push notifications for LED and button state changes (RFC 7641)
 - **Battery Monitoring**: Real ADC measurements with LiPo discharge curve lookup table
 - **Power Optimization**: TPS22916C load switch enables voltage divider only during measurement
 - **Automatic Reconnection**: Network monitor thread handles disconnection recovery
 - **NVS Storage**: Thread credentials persist across reboots
-- **Auto-Boot**: Joins Thread network automatically on power-up
+- **Auto-Boot**: Joins Thread network automatically on power-up (no NFC support yet, manual shell workaround)
 
 ## Hardware Support
 
@@ -128,6 +130,8 @@ The `ot dataset set active` command automatically stores the dataset in NVS. On 
 2. Enable IPv6 interface automatically
 3. Start Thread and join the network
 4. Begin responding to CoAP requests
+
+**But the device can not yet be reset on battery supply, so build and flash a firmware version without UART**
 
 ## Network Recovery
 
