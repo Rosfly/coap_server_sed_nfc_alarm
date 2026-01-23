@@ -13,8 +13,15 @@
 #include <openthread/thread.h>
 #include <openthread/instance.h>
 #include <openthread/ip6.h>
+#include <openthread/link.h>
 
 LOG_MODULE_REGISTER(network_monitor, LOG_LEVEL_INF);
+
+/* SED Discovery Grace Period: Stay awake for initial discovery, then switch to SED */
+#ifdef CONFIG_OPENTHREAD_MTD_SED
+#define SED_DISCOVERY_GRACE_PERIOD_MS (120 * 1000)  /* 2 minutes */
+static bool sed_mode_active = false;
+#endif
 
 #define MONITOR_INTERVAL K_SECONDS(5)
 #define RECONNECT_DELAY K_SECONDS(10)
@@ -72,6 +79,59 @@ static void thread_force_restart(otInstance *ot)
 	LOG_INF("Thread stack restarted - waiting for attachment...");
 }
 
+#ifdef CONFIG_OPENTHREAD_MTD_SED
+/**
+ * Enable full SED mode (radio sleeps between polls).
+ * Called after discovery grace period expires.
+ */
+static void sed_enable_sleep_mode(otInstance *ot)
+{
+	if (sed_mode_active) {
+		return;
+	}
+
+	otLinkModeConfig mode = otThreadGetLinkMode(ot);
+
+	LOG_INF("Discovery grace period ended - enabling SED sleep mode");
+	LOG_INF("Current mode: RxOnWhenIdle=%d, DeviceType=%d, NetworkData=%d",
+		mode.mRxOnWhenIdle, mode.mDeviceType, mode.mNetworkData);
+
+	/* Set RxOnWhenIdle=false to enable SED sleep mode */
+	mode.mRxOnWhenIdle = false;
+
+	otError err = otThreadSetLinkMode(ot, mode);
+	if (err == OT_ERROR_NONE) {
+		sed_mode_active = true;
+		LOG_INF("SED sleep mode enabled - radio will sleep between polls");
+	} else {
+		LOG_ERR("Failed to enable SED mode: %d", err);
+	}
+}
+
+/**
+ * Temporarily disable SED sleep mode (stay awake for discovery).
+ * Called at boot to allow multicast discovery to find the device.
+ */
+static void sed_disable_sleep_mode(otInstance *ot)
+{
+	otLinkModeConfig mode = otThreadGetLinkMode(ot);
+
+	LOG_INF("Disabling SED sleep for discovery grace period (%d seconds)",
+		SED_DISCOVERY_GRACE_PERIOD_MS / 1000);
+
+	/* Set RxOnWhenIdle=true to stay awake and respond to multicast */
+	mode.mRxOnWhenIdle = true;
+
+	otError err = otThreadSetLinkMode(ot, mode);
+	if (err == OT_ERROR_NONE) {
+		sed_mode_active = false;
+		LOG_INF("SED sleep disabled - device will stay awake for discovery");
+	} else {
+		LOG_ERR("Failed to disable SED sleep: %d", err);
+	}
+}
+#endif /* CONFIG_OPENTHREAD_MTD_SED */
+
 static void network_state_changed_callback(otChangedFlags flags, void *context)
 {
 	ARG_UNUSED(context);
@@ -85,10 +145,10 @@ static void network_state_changed_callback(otChangedFlags flags, void *context)
 		if (role == OT_DEVICE_ROLE_DETACHED || role == OT_DEVICE_ROLE_DISABLED) {
 			LOG_WRN("Device lost network connection");
 		} else if (role == OT_DEVICE_ROLE_CHILD) {
-			LOG_INF("Device attached to network as child (MTD)");
+			LOG_INF("Device attached to network as child");
 			detached_count = 0;  /* Reset counter on successful attach */
 		} else if (role == OT_DEVICE_ROLE_ROUTER || role == OT_DEVICE_ROLE_LEADER) {
-			LOG_INF("Device attached to network as router/leader (FTD)");
+			LOG_INF("Device attached to network as router/leader");
 			detached_count = 0;  /* Reset counter on successful attach */
 		}
 
@@ -125,7 +185,40 @@ static void monitor_thread_entry(void *p1, void *p2, void *p3)
 	last_role = otThreadGetDeviceRole(ot);
 	LOG_INF("Initial Thread role: %d", last_role);
 
+#ifdef CONFIG_OPENTHREAD_MTD_SED
+	/* SED Discovery Grace Period:
+	 * Wait for device to attach, then stay awake (RxOnWhenIdle=true) for 2 minutes
+	 * to allow the bridge to discover this device via multicast.
+	 * After grace period, enable full SED sleep mode for power savings.
+	 */
+	int64_t grace_period_start = 0;  /* 0 = not started yet */
+	bool grace_period_logged = false;
+#endif
+
 	while (monitor_running) {
+#ifdef CONFIG_OPENTHREAD_MTD_SED
+		otDeviceRole current_role = otThreadGetDeviceRole(ot);
+
+		/* Start grace period only after device attaches to network */
+		if (grace_period_start == 0 && current_role == OT_DEVICE_ROLE_CHILD) {
+			grace_period_start = k_uptime_get();
+			sed_disable_sleep_mode(ot);
+		}
+
+		/* Check if grace period has expired */
+		if (grace_period_start > 0 && !sed_mode_active) {
+			int64_t elapsed = k_uptime_get() - grace_period_start;
+			if (!grace_period_logged && elapsed < SED_DISCOVERY_GRACE_PERIOD_MS) {
+				LOG_INF("SED grace period: %lld/%d seconds remaining",
+					(SED_DISCOVERY_GRACE_PERIOD_MS - elapsed) / 1000,
+					SED_DISCOVERY_GRACE_PERIOD_MS / 1000);
+				grace_period_logged = true;
+			}
+			if (elapsed >= SED_DISCOVERY_GRACE_PERIOD_MS) {
+				sed_enable_sleep_mode(ot);
+			}
+		}
+#endif
 		otDeviceRole role = otThreadGetDeviceRole(ot);
 		bool ip6_enabled = otIp6IsEnabled(ot);
 

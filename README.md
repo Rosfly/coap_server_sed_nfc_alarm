@@ -6,7 +6,8 @@ CoAP Observe mechanism is lost after device reset (e.g. battery connection on de
 
 ## Features
 
-- **Thread MTD Mode**: Runs as Minimal Thread Device (child) for mobile/battery-powered use
+- **Thread SED Mode**: Runs as Sleepy End Device for ultra-low power consumption
+- **SED Discovery Grace Period**: Stays awake for 2 minutes after boot for bridge discovery
 - **CoAP Server**: Exposes `/led`, `/sw` (button), uptime, `/battery`, and `/voltage` resources
 - **CoAP Observe**: Push notifications for LED and button state changes (RFC 7641)
 - **Battery Monitoring**: Real ADC measurements with LiPo discharge curve lookup table
@@ -59,13 +60,8 @@ cd ~/zephyrproject
 For development with USB serial console. **Note**: This build will NOT boot from battery alone - USB connection required.
 
 ```bash
-cd ~/zephyrproject
+cd /home/ros/zephyrproject && west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp --shield seeed_xiao_expansion_board -s ~/dev/coap_server_sleepy -- -DOVERLAY_CONFIG="prj_uart.conf"
 
-# Build with UART overlay for debugging
-.venv/bin/west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
-    --shield seeed_xiao_expansion_board \
-    -s ~/dev/coap_server \
-    -- -DOVERLAY_CONFIG="prj_uart.conf"
 
 # Flash
 .venv/bin/west flash
@@ -208,6 +204,66 @@ Used by the bridge to detect device reboots. When the bridge polls uptime and se
 </led>;rt="led",</sw>;rt="button",</battery>;rt="battery",</voltage>;rt="voltage",</uptime>;rt="uptime"
 ```
 
+## SED (Sleepy End Device) Mode
+
+The device operates as a **Sleepy End Device (SED)** for optimal battery life. In SED mode, the radio is OFF most of the time, waking only:
+- Every 60 seconds to poll the parent for queued messages
+- Immediately on button press (GPIO interrupt)
+
+### How SED Works
+
+```
+MTD (always listening):  Radio always ON → High power consumption (~mA)
+SED (sleepy):            Radio ON only during polls → Ultra-low power (~µA)
+
+Timeline:
+  |----60s sleep----|poll|----60s sleep----|poll|----60s sleep----|
+                     ^                       ^
+                Radio ON briefly        Radio ON briefly
+
+Button press: Wakes device immediately, sends notification, returns to sleep
+```
+
+### Discovery Grace Period
+
+**Problem:** SED devices can't be discovered via multicast because they're asleep.
+
+**Solution:** After attaching to the Thread network, the device stays awake (RxOnWhenIdle=true) for **2 minutes** to allow the bridge to discover it via multicast. After the grace period, it switches to full SED mode.
+
+```
+Boot → Attach to Thread → Grace Period (2 min, awake) → SED Mode (sleeping)
+                          ↑
+                    Bridge discovers device here
+```
+
+### Latency Tradeoffs
+
+| Operation | MTD | SED | Notes |
+|-----------|-----|-----|-------|
+| Button notification | ~50ms | ~100-200ms | GPIO wakes device immediately |
+| GET /battery | ~50ms | Up to 60s | Request queued at parent until poll |
+| PUT /led | ~50ms | Up to 60s | Command queued at parent until poll |
+| Observe registration | ~50ms | Up to 60s | One-time during commissioning |
+
+**Key insight:** Button notifications are still fast because the device wakes immediately on GPIO interrupt. Only *incoming* requests (from bridge to device) have latency.
+
+### Verify SED Mode
+
+Use the OpenThread shell (build with `prj_uart.conf`):
+
+```shell
+ot mode          # Should show "-" (no 'r' = RxOnWhenIdle=false = SED)
+ot pollperiod    # Should show 60000 (ms)
+ot childtimeout  # Should show 240 (seconds)
+```
+
+On the border router, check the neighbor table:
+```shell
+ot-ctl neighbor table
+# R=0 means SED (RxOnWhenIdle=false)
+# R=1 means MTD (RxOnWhenIdle=true)
+```
+
 ## Configuration
 
 Key Kconfig options in `prj.conf`:
@@ -217,11 +273,22 @@ Key Kconfig options in `prj.conf`:
 CONFIG_OPENTHREAD_MTD=y
 CONFIG_OPENTHREAD_FTD=n
 
+# Enable SED (Sleepy End Device) mode
+CONFIG_OPENTHREAD_MTD_SED=y
+
+# Poll period: Wake every 60 seconds to check for messages
+CONFIG_OPENTHREAD_POLL_PERIOD=60000
+
 # Auto-start Thread on boot (requires dataset in NVS)
 CONFIG_OPENTHREAD_MANUAL_START=n
 
 # Child timeout before parent removes device (4 minutes)
+# Must be > 4x poll period to allow missed polls without disconnection
 CONFIG_OPENTHREAD_MLE_CHILD_TIMEOUT=240
+
+# Child supervision (parent probes child periodically)
+CONFIG_OPENTHREAD_CHILD_SUPERVISION_INTERVAL=129
+CONFIG_OPENTHREAD_CHILD_SUPERVISION_CHECK_TIMEOUT=190
 
 # TX power for range (+8 dBm max for nRF54L15)
 CONFIG_OPENTHREAD_DEFAULT_TX_POWER=8
@@ -297,14 +364,24 @@ This firmware is designed to work with the [Thread CoAP Bridge](https://github.c
 1. Install the Thread CoAP Bridge add-on in Home Assistant
 2. Flash this firmware to your device
 3. Commission the device to your Thread network
-4. The bridge will automatically discover the device via multicast
-5. Device appears in Home Assistant with LED control, button sensor, and battery monitoring
+4. **Wait for device to attach** - grace period starts automatically
+5. **Within 2 minutes**, the bridge will discover the device via multicast
+6. Device appears in Home Assistant with LED control, button sensor, and battery monitoring
+7. After 2 minutes, device enters SED sleep mode for power savings
+
+### SED Support in Bridge
+
+The bridge (v0.4.0+) fully supports SED devices:
+
+- **65-second timeouts**: All CoAP operations wait up to 65s for SED to poll and respond
+- **Unicast re-discovery**: Probes offline SED devices at their last-known IPv6 address
+- **Queued commands**: PUT/GET requests are queued at the parent router until SED polls
 
 ### Resource Monitoring
 
 The bridge uses different strategies for different resources:
 - **LED/Button**: CoAP Observe for real-time push notifications
-- **Battery/Voltage**: Polling (configurable interval, default 60s)
+- **Battery/Voltage/Uptime**: Polling every 60s (aligns with SED poll period)
 
 ### Observe Re-Registration
 
@@ -313,6 +390,17 @@ The bridge automatically re-registers as an observer every 60 seconds. This hand
 - **Network hiccups**: Connection issues are detected and observation is re-established
 
 This ensures button presses and LED state changes are always reported, even after the device reboots or temporarily loses network connectivity.
+
+### SED Re-discovery After Extended Offline
+
+When an SED device goes offline for an extended period and returns:
+
+1. Device rejoins Thread network, enters SED sleep mode
+2. Bridge's unicast re-discovery probes the device's last-known IPv6 (every 60s)
+3. Request is queued at parent router
+4. SED polls parent, receives request, responds
+5. Bridge receives response within 65s timeout → device re-discovered
+6. Polling and observe resume automatically
 
 ## License
 

@@ -8,6 +8,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(coap);
 
+#include <openthread/link.h>
+
 #include "coap_utils.h"
 #include "coap_observe.h"
 #include "button.h"
@@ -81,8 +83,32 @@ void btn_notify_observers(void)
 /* Work handler for deferred notification (called from thread context) */
 static void btn_notify_work_handler(struct k_work *work)
 {
-	LOG_INF("btn_notify_work_handler called, observers=%d", btn_rsc_ctx.observe.observer_count);
+	otInstance *ot = openthread_get_default_instance();
+
+	LOG_INF("Button wake: triggering immediate poll for SED");
+
+	/* Force immediate data request to activate radio and sync with parent.
+	 * This is important for SED (Sleepy End Device) mode where the radio
+	 * is normally off. The poll wakes the radio and retrieves any pending
+	 * messages from the parent before we send our notification.
+	 */
+	otError err = otLinkSendDataRequest(ot);
+	if (err == OT_ERROR_NONE) {
+		/* Brief delay to allow poll completion and radio stabilization */
+		k_sleep(K_MSEC(100));
+	} else {
+		LOG_WRN("Failed to send data request: %d", err);
+	}
+
+	LOG_INF("Sending button notification, observers=%d",
+		btn_rsc_ctx.observe.observer_count);
 	btn_notify_observers();
+
+	/* Keep radio active long enough for the NON-confirmable CoAP notification
+	 * to be transmitted. Without this delay, the SED may go back to sleep
+	 * before the message is actually sent over the air.
+	 */
+	k_sleep(K_MSEC(200));
 }
 
 static int btn_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
