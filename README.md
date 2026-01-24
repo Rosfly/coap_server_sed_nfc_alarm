@@ -373,7 +373,7 @@ This firmware is designed to work with the [Thread CoAP Bridge](https://github.c
 
 The bridge (v0.4.0+) fully supports SED devices:
 
-- **65-second timeouts**: All CoAP operations wait up to 65s for SED to poll and respond
+- **75-second timeouts**: All CoAP operations wait up to 75s for SED to poll and respond
 - **Unicast re-discovery**: Probes offline SED devices at their last-known IPv6 address
 - **Queued commands**: PUT/GET requests are queued at the parent router until SED polls
 
