@@ -39,6 +39,20 @@ config OT_COAP_SAMPLE_SHELL
 	  and button state from the command line. Disable for
 	  production builds to save ~150 lines of code.
 
+config OT_COAP_NFC_COMMISSION
+	bool "Enable NFC-based Thread commissioning"
+	default y
+	select NFC_T4T_NRFXLIB
+	select NFC_NDEF
+	select NFC_NDEF_MSG
+	select NFC_NDEF_PARSER
+	select NFC_NDEF_RECORD
+	help
+	  Enable NFC Type 4 Tag commissioning. Device will wait
+	  for Thread Active Dataset via NFC if not already
+	  commissioned. Use NFC Tools app on Android to write
+	  a Text record containing the hex-encoded dataset.
+
 endmenu
 
 source "Kconfig.zephyr"

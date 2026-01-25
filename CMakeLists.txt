@@ -21,6 +21,7 @@ target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_LED app PRIVATE src/led.c)
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_SW app PRIVATE src/button.c)
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_BATTERY app PRIVATE src/battery.c)
 target_sources_ifdef(CONFIG_OT_COAP_SAMPLE_UPTIME app PRIVATE src/uptime.c)
+target_sources_ifdef(CONFIG_OT_COAP_NFC_COMMISSION app PRIVATE src/nfc_commission.c)
 
 include(${ZEPHYR_BASE}/samples/net/common/common.cmake)
 

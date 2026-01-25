@@ -46,6 +46,11 @@
 	status = "okay";
 };
 
+/* NFC Type 4 Tag peripheral for Thread commissioning via phone */
+&nfct {
+	status = "okay";
+};
+
 /* ADC configuration for battery voltage measurement */
 &adc {
 	#address-cells = <1>;
