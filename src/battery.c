@@ -47,6 +47,12 @@ static bool battery_adc_initialized = false;
 static int32_t battery_voltage_mv = BATTERY_VOLTAGE_MV_DEFAULT;
 static int32_t battery_percentage = BATTERY_PERCENTAGE_DEFAULT;
 
+/* Timestamp of last measurement (for staleness check) */
+static int64_t last_measurement_time_ms = 0;
+
+/* Maximum age of cached voltage before triggering fresh measurement (120 seconds) */
+#define VOLTAGE_STALE_THRESHOLD_MS (120 * 1000)
+
 #if DT_NODE_EXISTS(VBAT_NODE)
 
 /*
@@ -224,6 +230,9 @@ static int battery_measure(void)
 	/* Calculate percentage from voltage using lookup table */
 	battery_percentage = voltage_to_percentage(battery_voltage_mv);
 
+	/* Update timestamp for staleness tracking */
+	last_measurement_time_ms = k_uptime_get();
+
 	LOG_INF("Battery: %d mV (%d%%), ADC pin: %d mV, raw: %d",
 		battery_voltage_mv, battery_percentage, adc_pin_mv, adc_sample_buffer);
 
@@ -304,12 +313,22 @@ void coap_battery_reg_rsc(void)
  * Voltage GET handler
  * Uses cached voltage from last measurement: {"device_id":"<eui64>","value":3800}
  * Value is in millivolts (3800 = 3.800V)
+ *
+ * If cached value is stale (>120s old), triggers fresh measurement first.
+ * This handles cases where voltage is queried before battery, or battery query failed.
  */
 static int voltage_handler_get(void *ctx, otMessage *msg, const otMessageInfo *msg_info)
 {
 	uint8_t buf[COAP_MAX_BUF_SIZE];
+	int64_t now = k_uptime_get();
+	int64_t age_ms = now - last_measurement_time_ms;
 
-	/* Use cached voltage from battery measurement (battery is always queried first) */
+	/* Refresh measurement if cached value is stale or never measured */
+	if (last_measurement_time_ms == 0 || age_ms > VOLTAGE_STALE_THRESHOLD_MS) {
+		LOG_INF("Voltage cache stale (%lld ms old), refreshing...", age_ms);
+		battery_measure();
+	}
+
 	struct json_voltage_get voltage_data = {
 		.device_id = coap_device_id(),
 		.value = battery_voltage_mv,
