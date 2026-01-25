@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2024 Alexandre Bailon
- *
- * SPDX-License-Identifier: MIT
- */
-
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(coap);

@@ -1,13 +1,13 @@
-# Thread CoAP Server/Client for Home Assistant Integration
+# Thread CoAP Server for Home Assistant Integration
 
-A Zephyr-based Thread CoAP server designed for integration with Home Assistant via the Thread CoAP Bridge add-on. Supports LED control, button input, battery monitoring with real ADC measurements, and automatic network reconnection.
+A Zephyr-based Thread CoAP server designed for integration with Home Assistant via the Thread CoAP Bridge add-on (acting as CoAP client). Supports LED control, button input, battery monitoring with real ADC measurements, and automatic network reconnection.
 
-CoAP Observe mechanism is lost after device reset (e.g. battery connection on device installation), cause CoAP server forgets the registered observe resources (button in this case) and will never push again a message on button press unless the client re-registers observe demand. That's why the client monitors uptime: so every minute the client on HA polls the server battery voltage and battery percentage along with uptime. If the uptime declines, that means the device reset and the client immediately refreshes the observe demand. So ~1 minute after reset the server should be ready to push a message on button press.
+CoAP Observe mechanism is normally lost after device reset (e.g. battery connection on device installation), cause CoAP server forgets the registered observe resources (button in this case) and will never push again a message on button press unless the client re-registers observe demand. That's why the client monitors **uptime**: so every 2 minutes the client on HA polls the server battery voltage and battery percentage along with uptime. If the uptime declines, that means the device reset and the client immediately refreshes the observe demand. This way the server should be ready to push a message on button press.
 
 ## Features
 
 - **Thread SED Mode**: Runs as Sleepy End Device for ultra-low power consumption
-- **SED Discovery Grace Period**: Stays awake for 2 minutes after boot for bridge discovery
+- **SED Discovery Grace Period**: Stays awake for 2 minutes after boot for bridge discovery (good for battery replacement or any resets)
 - **CoAP Server**: Exposes `/led`, `/sw` (button), uptime, `/battery`, and `/voltage` resources
 - **CoAP Observe**: Push notifications for LED and button state changes (RFC 7641)
 - **Battery Monitoring**: Real ADC measurements with LiPo discharge curve lookup table
@@ -41,21 +41,11 @@ VBAT ─── TPS22916C ─── R5(10K) ───┬─── P1.14 (AIN7)
 
 ### Standard Build (Battery-Optimized)
 
-Default build disables UART/logging for battery-only boot:
+Default build disables UART/logging for battery-only boot: ```simply Strg + Shift + P >> open menu Tasks> Run Task>West Build nRF54l15.code-workspace``
 
-```bash
-cd ~/zephyrproject
+Flash the same way
 
-# Build for XIAO nRF54L15 with expansion board shield
-.venv/bin/west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
-    --shield seeed_xiao_expansion_board \
-    -s ~/dev/coap_server
-
-# Flash
-.venv/bin/west flash
-```
-
-### Debug Build (USB/UART Logging)
+### Debug Build (USB/UART Logging) for Thread Credential Copy
 
 For development with USB serial console. **Note**: This build will NOT boot from battery alone - USB connection required.
 
@@ -63,8 +53,7 @@ For development with USB serial console. **Note**: This build will NOT boot from
 cd /home/ros/zephyrproject && west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp --shield seeed_xiao_expansion_board -s ~/dev/coap_server_sleepy -- -DOVERLAY_CONFIG="prj_uart.conf"
 
 
-# Flash
-.venv/bin/west flash
+
 
 # Monitor serial output (115200 baud)
 # Use VSCode Serial Monitor or: screen /dev/ttyACM0 115200
