@@ -2,6 +2,8 @@
 
 A Zephyr-based Thread CoAP server designed for integration with Home Assistant via the Thread CoAP Bridge add-on. Supports LED control, button input, battery monitoring with real ADC measurements, NFC-based commissioning, and automatic network reconnection.
 
+https://github.com/Rosfly/thread-coap-bridge-addon
+
 ## Features
 
 - **NFC Commissioning**: Provision Thread credentials via Android phone NFC - no cables needed
@@ -10,7 +12,7 @@ A Zephyr-based Thread CoAP server designed for integration with Home Assistant v
 - **CoAP Server**: Exposes `/led`, `/sw` (button), `/uptime`, `/battery`, and `/voltage` resources
 - **CoAP Observe**: Push notifications for LED and button state changes (RFC 7641)
 - **Battery Monitoring**: Real ADC measurements with LiPo discharge curve lookup table
-- **Power Optimization**: TPS22916C load switch enables voltage divider only during measurement
+- **Power Optimization**: TPS22916C load switch enables voltage divider only during measurement to save power
 - **Automatic Reconnection**: Network monitor thread handles disconnection recovery
 - **NVS Storage**: Thread credentials persist across reboots
 
@@ -38,7 +40,7 @@ VBAT ─── TPS22916C ─── R5(10K) ───┬─── P1.14 (AIN7)
 
 **Important**: This project requires **nRF Connect SDK**, not mainline Zephyr. The NFC libraries are only available in nRF Connect SDK.
 
-### Production Build (Battery-Optimized)
+### Production Build (Battery-Optimized) and Flash
 
 Default build disables UART/logging for battery-only boot:
 
@@ -51,9 +53,9 @@ west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
 west flash
 ```
 
-Or use VSCode: `Ctrl+Shift+P` → Tasks: Run Task → West Build
+Or use nRF side bar in VSCode
 
-### Debug Build (USB/UART + Shell)
+### Debug Build (USB/UART + Shell) and Flash
 
 For development with USB serial console and OpenThread shell. **Note**: This build will NOT boot from battery alone - USB connection required.
 
@@ -90,7 +92,7 @@ From Home Assistant:
 2. Click on your Thread network
 3. Find the **Active Operational Dataset** (TLV hex string)
 
-Or from OpenThread Border Router:
+Or export (-x) from OpenThread Border Router:
 ```bash
 # SSH into OTBR container
 docker exec -it addon_core_openthread_border_router ot-ctl dataset active -x
@@ -151,10 +153,15 @@ ot state
 BOOT
   │
   ▼
-Check NVS for dataset
+Check sw0 button
   │
+  ├─── sw0 held ───────► Clear stored dataset
+  │                         │
+  ▼                         ▼
+Check NVS for dataset     NFC mode (LED blinks)
+  │                         │
   ├─── Dataset found ──► Start Thread ──► Join network ──► SED mode
-  │
+  │                         │
   └─── No dataset ────► NFC mode (LED blinks)
                             │
                             ▼
@@ -166,6 +173,10 @@ Check NVS for dataset
                             ▼
                         Start Thread ──► Join network ──► SED mode
 ```
+
+### Re-commissioning
+
+To switch to a different Thread network, hold the **sw0** button while pressing **reset** switch. The device clears its stored dataset and enters NFC commissioning mode. Then provision the new network dataset via NFC as usual.
 
 ## Network Recovery
 
@@ -236,7 +247,7 @@ Used by the bridge to detect device reboots and re-register CoAP Observe subscri
 The device operates as a Sleepy End Device for optimal battery life:
 
 - Radio OFF most of the time
-- Wakes every 15 seconds to poll parent for queued messages
+- Wakes every 5 seconds to poll parent for queued messages (CONFIG_OPENTHREAD_POLL_PERIOD=5000 in prj.conf:70)
 - Wakes immediately on button press (GPIO interrupt)
 
 ### Discovery Grace Period
@@ -323,8 +334,8 @@ ot pollperiod               # Should show 15000 (ms)
 
 ### NFC: Want to re-provision
 
-- Currently requires erasing flash: `west flash --recover`
-- Future enhancement: Hold button on boot to clear dataset
+- Hold **sw0** while pressing **reset** to clear the stored dataset and enter NFC mode
+- Then tap your phone with the new Thread dataset as usual
 
 ### Device Not Joining Network
 
@@ -402,7 +413,7 @@ Thread dataset persistence is handled automatically:
 
 ## Future Enhancements
 
-- [ ] Hold button on boot to clear dataset and re-enter NFC mode
+- [x] Hold button on boot to clear dataset and re-enter NFC mode
 - [ ] QR code fallback for phones without NFC
 - [ ] BLE commissioning as alternative method
 - [ ] Home Assistant add-on to generate NFC tags with dataset

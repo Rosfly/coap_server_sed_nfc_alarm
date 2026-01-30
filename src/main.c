@@ -28,9 +28,17 @@ LOG_MODULE_REGISTER(coap);
 #endif /* CONFIG_OT_COAP_SAMPLE_UPTIME */
 
 #ifdef CONFIG_OT_COAP_NFC_COMMISSION
+#include <zephyr/drivers/gpio.h>
 #include <openthread/dataset.h>
+#include <openthread/instance.h>
+#include <openthread/thread.h>
+#include <openthread/ip6.h>
 #include <zephyr/net/openthread.h>
 #include "nfc_commission.h"
+
+/* sw0 button for re-commissioning: hold during reset to clear dataset */
+static const struct gpio_dt_spec recommission_btn =
+	GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 #endif /* CONFIG_OT_COAP_NFC_COMMISSION */
 
 
@@ -45,14 +53,37 @@ int main(void)
 	}
 
 #ifdef CONFIG_OT_COAP_NFC_COMMISSION
-	/* Check if device needs NFC commissioning */
+	/* Check if re-commissioning requested or device needs NFC commissioning */
 	{
 		otInstance *ot = openthread_get_default_instance();
+		bool commissioned = false;
 
 		if (ot) {
-			openthread_mutex_lock();
-			bool commissioned = otDatasetIsCommissioned(ot);
-			openthread_mutex_unlock();
+			/* Check if sw0 is held at boot to force re-commissioning */
+			bool force_nfc = false;
+
+			if (gpio_is_ready_dt(&recommission_btn)) {
+				gpio_pin_configure_dt(&recommission_btn, GPIO_INPUT);
+				k_sleep(K_MSEC(50)); /* debounce */
+
+				if (gpio_pin_get_dt(&recommission_btn)) {
+					LOG_INF("sw0 held at boot - clearing dataset for re-commissioning");
+
+					openthread_mutex_lock();
+					otThreadSetEnabled(ot, false);
+					otIp6SetEnabled(ot, false);
+					otInstanceErasePersistentInfo(ot);
+					openthread_mutex_unlock();
+
+					force_nfc = true;
+				}
+			}
+
+			if (!force_nfc) {
+				openthread_mutex_lock();
+				commissioned = otDatasetIsCommissioned(ot);
+				openthread_mutex_unlock();
+			}
 
 			if (!commissioned) {
 				LOG_INF("Device not commissioned - starting NFC mode");
