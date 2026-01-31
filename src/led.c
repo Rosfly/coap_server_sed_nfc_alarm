@@ -12,7 +12,9 @@ LOG_MODULE_DECLARE(coap);
 #include "coap_observe.h"
 #include "led.h"
 
-/* Alarm output pin (P1.06) - weak-high pulse via internal pull-up on LED ON */
+#ifdef CONFIG_OT_COAP_SAMPLE_SERVER
+
+/* Alarm output pin (P1.06) - push-pull pulse on LED ON */
 #if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))
 static const struct gpio_dt_spec alarm_pin =
 	GPIO_DT_SPEC_GET(DT_NODELABEL(alarm_pin), gpios);
@@ -25,8 +27,6 @@ static void alarm_pulse_timer_handler(struct k_timer *timer)
 	gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT);
 }
 #endif
-
-#ifdef CONFIG_OT_COAP_SAMPLE_SERVER
 struct led_rsc_data {
 	const struct gpio_dt_spec gpio;
 	int state;
@@ -136,8 +136,8 @@ static int led_handler_put(void *ctx, uint8_t *buf, int size)
 #if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))
 	if (alarm_pin_ready && ret == 0 && led_data.led_id == 0) {
 		if (led->state == 1) {
-			/* Weak high: enable internal pull-up (~13k to VDD) */
-			gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT | GPIO_PULL_UP);
+			/* Drive pin high (standard push-pull) for ~1 second */
+			gpio_pin_configure_dt(&alarm_pin, GPIO_OUTPUT_HIGH);
 			k_timer_start(&alarm_pulse_timer, K_SECONDS(1), K_NO_WAIT);
 		} else {
 			/* LED off: ensure high-Z, cancel any pending pulse */

@@ -46,27 +46,34 @@ Default build disables UART/logging for battery-only boot:
 
 ```bash
 cd /home/ros/ncs
-source .venv/bin/activate
+
+# you can build in nRF Connect directly
 west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
     --shield seeed_xiao_expansion_board \
-    -s /home/ros/dev/coap_server_sed_nfc
-west flash
+    -s /home/ros/dev/coap_server_sed_nfc_alarm
+
+# this step is needed always
+cd ~/dev/coap_server_sed_nfc_alarm/build && west flash
 ```
 
 Or use nRF side bar in VSCode
 
 ### Debug Build (USB/UART + Shell) and Flash
 
-For development with USB serial console and OpenThread shell. **Note**: This build will NOT boot from battery alone - USB connection required.
+For development with USB serial console and OpenThread shell. 
 
+**Note**: This build will NOT boot from battery alone - USB connection required. Add prj_uart to configuration:
+
+![ alt text for screen readers](./pics/build_shell.png "Text to show on mouseover")
 ```bash
 cd /home/ros/ncs
-source .venv/bin/activate
+
 west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
     --shield seeed_xiao_expansion_board \
-    -s /home/ros/dev/coap_server_sed_nfc \
+    -s /home/ros/dev/coap_server_sed_nfc_alarm \
     -- -DOVERLAY_CONFIG="prj_uart.conf"
-west flash
+# this step is needed always
+cd ~/dev/coap_server_sed_nfc_alarm/build && west flash
 
 # Monitor serial output (115200 baud)
 # Use VSCode Serial Monitor or: screen /dev/ttyACM0 115200
@@ -388,6 +395,28 @@ openthread_mutex_lock();
 // ... OpenThread API calls ...
 openthread_mutex_unlock();
 ```
+
+### Alarm Output Pulse (P1.06)
+
+The `/led` resource drives an additional digital output on pin **P1.06** (XIAO connector D2), intended for triggering an external alarm or relay circuit.
+
+**Behavior:**
+
+| LED command | LED (P2.0) | Alarm pin (P1.06) |
+|---|---|---|
+| OFF (state=0) | OFF | High-impedance (floating) |
+| ON (state=1) | ON | Driven HIGH (3.3V) for ~1 second, then high-impedance |
+| TOGGLE (state=2) | Toggles | Follows resulting ON/OFF state |
+
+**Implementation details:**
+
+- Pin is defined as `alarm_pin` in the devicetree overlay (`boards/xiao_nrf54l15_nrf54l15_cpuapp.overlay`)
+- Default state is `GPIO_INPUT` (high-impedance / disconnected)
+- On LED ON: pin is reconfigured to `GPIO_OUTPUT_HIGH` (standard push-pull drive to VDD)
+- A `k_timer` fires after 1 second and reconfigures the pin back to `GPIO_INPUT` (high-impedance)
+- On LED OFF: any pending pulse timer is cancelled and pin returns to high-impedance immediately
+- Only `led_id == 0` triggers the alarm pulse
+- All alarm pin code is guarded by `#if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))` so it compiles out cleanly if the overlay node is removed
 
 ### NVS Persistence
 
