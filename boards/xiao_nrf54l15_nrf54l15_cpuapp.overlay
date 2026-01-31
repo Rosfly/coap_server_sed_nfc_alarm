@@ -15,6 +15,15 @@
 		sw0 = &usr_btn;
 	};
 
+	/* Alarm output pin - weak-high pulse via internal pull-up on LED ON */
+	alarm_out {
+		compatible = "gpio-leds";
+		alarm_pin: alarm_pin_0 {
+			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;  /* P1.06 */
+			label = "Alarm Output";
+		};
+	};
+
 	/* Battery voltage measurement via voltage divider
 	 * Schematic: VBAT -> TPS22916C -> R5(10K) -> ADC -> R6(10K) -> GND
 	 * Divider ratio: 2.0 (full_ohms / output_ohms = 20K / 10K)

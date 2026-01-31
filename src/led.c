@@ -12,6 +12,20 @@ LOG_MODULE_DECLARE(coap);
 #include "coap_observe.h"
 #include "led.h"
 
+/* Alarm output pin (P1.06) - weak-high pulse via internal pull-up on LED ON */
+#if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))
+static const struct gpio_dt_spec alarm_pin =
+	GPIO_DT_SPEC_GET(DT_NODELABEL(alarm_pin), gpios);
+static struct k_timer alarm_pulse_timer;
+static bool alarm_pin_ready;
+
+static void alarm_pulse_timer_handler(struct k_timer *timer)
+{
+	/* Return pin to high-impedance */
+	gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT);
+}
+#endif
+
 #ifdef CONFIG_OT_COAP_SAMPLE_SERVER
 struct led_rsc_data {
 	const struct gpio_dt_spec gpio;
@@ -64,6 +78,16 @@ static int led_init(otCoapResource *rsc)
 		LOG_INF("LED %d initialized to OFF", i);
 	}
 
+	/* Initialize alarm output pin */
+#if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))
+	if (gpio_is_ready_dt(&alarm_pin)) {
+		gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT);  /* start high-Z */
+		k_timer_init(&alarm_pulse_timer, alarm_pulse_timer_handler, NULL);
+		alarm_pin_ready = true;
+		LOG_INF("Alarm output pin initialized (high-Z)");
+	}
+#endif
+
 	return 0;
 }
 
@@ -107,6 +131,21 @@ static int led_handler_put(void *ctx, uint8_t *buf, int size)
 	if (ret == 0) {
 		led_notify_observers(led_ctx);
 	}
+
+	/* Trigger alarm output pulse on P1.06 for led_id 0 */
+#if DT_NODE_EXISTS(DT_NODELABEL(alarm_pin))
+	if (alarm_pin_ready && ret == 0 && led_data.led_id == 0) {
+		if (led->state == 1) {
+			/* Weak high: enable internal pull-up (~13k to VDD) */
+			gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT | GPIO_PULL_UP);
+			k_timer_start(&alarm_pulse_timer, K_SECONDS(1), K_NO_WAIT);
+		} else {
+			/* LED off: ensure high-Z, cancel any pending pulse */
+			k_timer_stop(&alarm_pulse_timer);
+			gpio_pin_configure_dt(&alarm_pin, GPIO_INPUT);
+		}
+	}
+#endif
 
 	return ret;
 }
