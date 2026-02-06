@@ -1,25 +1,73 @@
 
-# Fast way to integrate low-power devices into Home Assistant
+# Fast way to integrate low-power devices running Zephyr RTOS into Home Assistant
 
-## Motivation: Add modern low-power CoAP over Thread connectivity to any device
+This project does not compete with Matter ecosystem, it should show how to __add ultra low-power devices__ into existing PHY-layer and with similar UX, so that the user commissions new device to existing Thread network safely using NFC of his smartphone and the __device appears in Home Assistant UI automatically__.
 
-**Thread protocol** is extremely power efficient compared to WiFi, it builds a solid PHY Layer for devices that don't need high bandwidth and work for many months or even 1-2 years on battery.
+![](./pics/iot_system_architecture.png  "CoAP and Matter over same PHY")
 
-The **Matter protocol** on top of Thread creates a safe application layer with straightforward service discovery and UI on all available home automation platforms. Programming Matter is complicated for DIY, even the installation of the toolchain is a challenge. Nordic provides a few Matter examples, but the Matter itself is not yet even planned for mainstream Zephyr RTOS integration. 
+## Motivation: Add modern low-power CoAP over Thread connectivity to any device and integrate it into HA OS
+
+**Thread protocol** is extremely power efficient compared to WiFi, it builds a solid PHY with IPv6-based mesh networking Layer for devices that don't need high bandwidth and work for __many months or even 1-2 years on battery__.
+
+**Matter protocol** __on top of Thread__ creates a safe application layer with a straightforward service discovery and UI on all available home automation platforms. Programming Matter is complicated for DIY, even the installation of the toolchain is a challenge. Nordic provides a few Matter examples, but the Matter itself is not yet even planned for mainstream Zephyr RTOS integration. 
 
 **CoAP (RFC 7252 Constrained Application Protocol)** was invented before Matter, it has no pre-defined device classes (light, binary sensor) and no commissioning concept to integrate the new gadget into existing Thread network. But it is simple and has both Python and Zephyr support, what makes CoAP over Thread more attractive for DIY development.
 
 Home Assistant has automatic **service discovery** for many types of devices, so one can push the proper messages to MQTT Add-on to register the new devices. The proposed architecture consists of two parts:
 
-- **CoAP Client** as a Bridge between existing OpenThread Add-on and MQTT Add-on, it is a container one can download from GitHub and install on HA OS in 1 minute
+- **CoAP Client with Data Model** as a Bridge between existing OpenThread Add-on and MQTT Add-on, it is a container one can download from [GitHub](https://github.com/Rosfly/thread-coap-bridge-addon) and install on HA OS in 1 minute. It is __not a simple relais__ between Thread and MQTT, it manages a small database for device commissioning and decommissioning
 
-- **CoAP Server** on the device side, in this example a cheap siren with added Xiao Seeed nRF54L15 board, the board is flashed using nRF Connect (Zephyr-based, but not native Zephyr). Vanilla Zephyr does not yet support Nordic's NFC libraries needed for device commissioning using smartphone, that's why nRF SDK. If you can live with copying credentials over Zephyr shell, then use the Debug chapter, it doesn't need nRF Connect at all.
+- **CoAP Server** on the device side, in this example a cheap siren with integrated Xiao Seeed nRF54L15 board, the board is flashed using nRF Connect (Zephyr-based, but not native Zephyr). Vanilla Zephyr does not yet support Nordic's NFC libraries needed for device commissioning using smartphone, that's why nRF SDK. If you can live with copying credentials over Zephyr shell, then use the Debug chapter, it doesn't need nRF Connect at all.
 
-The shown architecture integrates both CoAP-over-Thread and Matter-over-Thread on one Home Assistant host, all devices run on the same Thread PHY and over same border router.
+The shown architecture integrates both CoAP-over-Thread and Matter-over-Thread on one Home Assistant host, all devices run on the same Thread PHY and over same border router. 
 
-![](./pics/iot_system_architecture.png  "CoAP vs Matter")
+## Physical Setup
 
-# Thread CoAP Server for Home Assistant Integration
+The target embedded device is the Xiao Seeed nRF54L15 board with soldered JST battery connector and NFC Antenna attached to NFC pads. This board has Thread-capable radio in MCU and on-board 2.4GHz Antenna.
+
+![](./pics/nfc_setup.png)
+
+
+
+## NFC Commissioning Process
+
+The firmware is flashed using OpenOCD over USB, no additional hardware needed. The board starts at boot the NFC commissioning mode, so it waits for Thread dataset to be pushed from smartphone.
+
+__Prerequisites:__
+
+- running Home Assistant (HAOS) with 3 Add-ons installed (MQTT, OpenThread and CoAP Bridge), Terminal Add-on recommended for debugging  
+- available Thread network, so an OpenThread border router (OTBR) like ZBT-2 on the diagram or even another nRF54L15 board with flashed OTBR image from Nordic samples (it was successfully tested as part of this project)
+- App like NFC Tools for initial commissioning over NFC-capable smartphone
+- HomeAsisstant Companion App installed on same smartphone
+
+Step 1: copy the working Thread TLV dataset from HAOS Settings/Devices/Thread  
+![](./pics/tlv.png)
+
+Step 2: Paste the dataset into NFC Tools and save it  
+![](./pics/nfc.png)
+Write/Add Dataset/Text
+
+Step 3: Place smartphone near NFC antenna and press "Write"  
+![](./pics/write.png)
+
+Now the credentials are in non-volatile memory and you can verify the device joining the Thread network using Terminal Add-on
+
+```bash
+➜  ~ docker exec -it addon_core_openthread_border_router /bin/bash
+root@homeassistant:/usr/src# ot-ctl state
+leader
+Done
+root@homeassistant:/usr/src# ot-ctl neighbor table
+| Role | RLOC16 | Age | Avg RSSI | Last RSSI |R|D|N| Extended MAC     | Version |
++------+--------+-----+----------+-----------+-+-+-+------------------+---------+
+|   C  | 0x3401 |   1 |      -68 |       -68 |0|0|0| c2d7101ffc8a974b |       4 |
+|   C  | 0x3402 |  11 |      -71 |       -71 |0|0|0| 9e57ff5e2bfafda3 |       4 |
+|   C  | 0x340a |   1 |      -79 |       -79 |0|0|0| 3ad296c17cef650a |       5 |
+
+```
+The firmware appears as Minimal Thread Device in child role (C) and gives CoAP client the chance to discover the new device: it does not sleep during first 2 minutes after boot, so the CoAP client polling every minute can commission the new CoAP devices. You can track the RDN state 100 in the table above, that means MTD. After the timer expiration the device goes into SED (Sleepy End Device) mode, RDN=000 like on picture above. It wakes up every 5 seconds, polls to thread leader that he is ready for instructions, Thread leader signals to CoAP application it can accept instructions and the CoAP Client can send him UDP requests. 
+
+# Tech Details on Thread CoAP Server for Home Assistant Integration
 
 A Zephyr-based Thread CoAP server designed for integration with Home Assistant via the Thread CoAP Bridge add-on. Supports LED control, button input, battery monitoring with real ADC measurements, NFC-based commissioning, and automatic network reconnection.
 
