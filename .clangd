@@ -1,5 +1,0 @@
-CompileFlags:
-  CompilationDatabase: /home/ros/zephyrproject/build/
-  Remove:
-    - -mfp16-format=ieee
-    - -fno-reorder-functions

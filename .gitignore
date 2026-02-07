@@ -1,6 +1,19 @@
 # editors
 *.swp
 *~
+.clangd
+*.code-workspace
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # build
 /build*/
+
+# binary blobs - link to datasheets, don't commit them
+datasheets/
+
+# source files for generated images
+*.odp

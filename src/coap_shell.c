@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2024 Alexandre Bailon
+ * Copyright (c) 2024-2025
  *
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  */
 
 #include <zephyr/shell/shell.h>

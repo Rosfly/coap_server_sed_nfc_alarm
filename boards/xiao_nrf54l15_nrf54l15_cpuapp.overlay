@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  *
  * OpenThread CoAP Server overlay for XIAO nRF54L15
  * Enables IEEE 802.15.4 radio support required for OpenThread

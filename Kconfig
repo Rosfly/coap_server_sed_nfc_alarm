@@ -1,7 +1,7 @@
 # Config options for OpenThread Border CoAP sample app
 
-# Copyright (c) 2024 Alexandre Bailon
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024-2025
+# SPDX-License-Identifier: MIT
 
 mainmenu "OpenThread CoAP Sample"
 

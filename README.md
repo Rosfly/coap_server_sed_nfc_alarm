@@ -15,13 +15,13 @@ Proposed approach does not compete with Matter protocol, it should show how to _
 
 The proposed architecture consists of two parts:
 
-- **CoAP Client with Data Model** as a Bridge between existing OpenThread Add-on and MQTT Add-on, it is a container one can download from [GitHub](https://github.com/Rosfly/thread-coap-bridge-addon) and install on HA OS in 1 minute. It is __not a simple relais__ between Thread and MQTT, it manages a small database for device commissioning and decommissioning
+- **CoAP Client with Data Model** as a Bridge between existing OpenThread Add-on and MQTT Add-on, it is a container one can download from [GitHub](https://github.com/Rosfly/thread-coap-bridge-addon) and install on HA OS in 1 minute. It is __not a simple relay__ between Thread and MQTT, it manages a small database for device commissioning and decommissioning
 
 - **CoAP Server** on the device side, in this example a cheap siren with integrated Xiao Seeed nRF54L15 board, the board is flashed using nRF Connect (Zephyr-based, but not native Zephyr). Vanilla Zephyr does not yet support Nordic's NFC libraries needed for device commissioning using smartphone, that's why nRF SDK. If you can live with copying credentials over Zephyr shell, then use the Debug chapter, it doesn't need nRF Connect at all.
 
 The shown architecture integrates both CoAP-over-Thread and Matter-over-Thread on one Home Assistant host, all devices run on the same Thread PHY and over same border router. 
 
-## Automatic Discovery after Commissioning
+## Automatic Service Discovery after Commissioning
 
 After easy commissioning described in chapter below the device appears with all its functions in Home Assistant UI:
  - buttons
@@ -71,7 +71,7 @@ __Prerequisites:__
 - running Home Assistant (HAOS) with 3 Add-ons installed and running (MQTT, OpenThread and CoAP Bridge), Terminal Add-on recommended for debugging  
 - available Thread network, so an OpenThread border router (OTBR) like ZBT-2 on the diagram or even another nRF54L15 board with flashed OTBR image from Nordic samples (it was successfully tested as part of this project)
 - App like NFC Tools for initial commissioning over NFC-capable smartphone
-- HomeAsisstant Companion App installed on same smartphone
+- HomeAssistant Companion App installed on same smartphone
 
 Step 1: copy the working Thread TLV dataset from HAOS Settings/Devices/Thread  
 ![](./pics/tlv.png)
@@ -98,7 +98,7 @@ root@homeassistant:/usr/src# ot-ctl neighbor table
 |   C  | 0x340a |   1 |      -79 |       -79 |0|0|0| 3ad296c17cef650a |       5 |
 
 ```
-The firmware appears as Minimal Thread Device in child role (C) and gives CoAP client the chance to discover the new device: it does not sleep during first 2 minutes after boot, so the CoAP client polling every minute can commission the new CoAP devices. You can track the RDN state 100 in the table above, that means MTD. After the timer expiration the device goes into SED (Sleepy End Device) mode, RDN=000 like on picture above. It wakes up every 5 seconds, polls to thread leader that he is ready for instructions, Thread leader signals to CoAP application it can accept instructions and the CoAP Client can send him UDP requests. 
+The firmware appears as Minimal Thread Device in child role (C) and gives CoAP client the grace period to discover the new device: it does not sleep during first 2 minutes after boot, so the CoAP client polling every minute can commission the new CoAP devices. You can track the RDN state 100 in the table above, that means MTD. After the timer expiration the device goes into SED (Sleepy End Device) mode, RDN=000 like on picture above. It wakes up every 5 seconds, polls to thread leader that he is ready for instructions, Thread leader signals to CoAP application it can accept instructions and the CoAP Client can send him UDP requests. 
 
 # Tech Details on Thread CoAP Server for Home Assistant Integration
 
@@ -147,15 +147,15 @@ VBAT ─── TPS22916C ─── R5(10K) ───┬─── P1.14 (AIN7)
 Default build disables UART/logging for battery-only boot:
 
 ```bash
-cd /home/ros/ncs
+cd <ncs_sdk_path>
 
 # you can build in nRF Connect directly
 west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
     --shield seeed_xiao_expansion_board \
-    -s /home/ros/dev/coap_server_sed_nfc_alarm
+    -s <project_path>
 
 # this step is needed always
-cd ~/dev/coap_server_sed_nfc_alarm/build && west flash
+cd <project_path>/build && west flash
 ```
 
 Or use nRF side bar in VSCode
@@ -168,14 +168,14 @@ For development with USB serial console and OpenThread shell.
 
 ![ alt text for screen readers](./pics/build_shell.png "build config")
 ```bash
-cd /home/ros/ncs
+cd <ncs_sdk_path>
 
 west build -p always -b xiao_nrf54l15/nrf54l15/cpuapp \
     --shield seeed_xiao_expansion_board \
-    -s /home/ros/dev/coap_server_sed_nfc_alarm \
+    -s <project_path> \
     -- -DOVERLAY_CONFIG="prj_uart.conf"
 # this step is needed always
-cd ~/dev/coap_server_sed_nfc_alarm/build && west flash
+cd <project_path>/build && west flash
 
 # Monitor serial output (115200 baud)
 # Use VSCode Serial Monitor or: screen /dev/ttyACM0 115200
@@ -374,8 +374,8 @@ Boot → Join Thread → Grace Period (2 min, awake) → SED Mode (sleeping)
 | Operation | Latency | Notes |
 |-----------|---------|-------|
 | Button notification | ~100-200ms | GPIO wakes device immediately |
-| GET /battery | Up to 15s | Request queued until next poll |
-| PUT /led | Up to 15s | Command queued until next poll |
+| GET /battery | Up to 5s | Request queued until next poll |
+| PUT /led | Up to 5s | Command queued until next poll |
 
 ## Configuration
 
@@ -385,7 +385,7 @@ Boot → Join Thread → Grace Period (2 min, awake) → SED Mode (sleeping)
 # Thread SED mode
 CONFIG_OPENTHREAD_MTD=y
 CONFIG_OPENTHREAD_MTD_SED=y
-CONFIG_OPENTHREAD_POLL_PERIOD=15000
+CONFIG_OPENTHREAD_POLL_PERIOD=5000
 
 # NFC Commissioning
 CONFIG_OT_COAP_NFC_COMMISSION=y
@@ -548,6 +548,13 @@ Thread dataset persistence is handled automatically:
 - [ ] QR code fallback for phones without NFC
 - [ ] BLE commissioning as alternative method
 - [ ] Home Assistant add-on to generate NFC tags with dataset
+
+Review issues: __One medium issue__ — race condition in src/coap_observe.c:
+The observer list (resource->observers[], resource->observer_count) is accessed from both CoAP request callbacks and button/LED notification paths without synchronization. In practice this is low-risk because OpenThread serializes most of these callbacks, but adding a k_mutex to struct coap_observe_resource would be the clean fix.
+
+__Minor:__
+
+src/coap_discovery.c builds the .well-known/core response into a 128-byte buffer without checking snprintf return for truncation. Currently fits, but fragile if more resources are added.
 
 ## References
 

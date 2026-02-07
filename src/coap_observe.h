@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2024 Alexandre Bailon
+ * Copyright (c) 2024-2025
  *
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: MIT
  *
  * CoAP Observe (RFC 7641) support for push notifications
  */
