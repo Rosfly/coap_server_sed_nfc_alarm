@@ -30,8 +30,8 @@ After easy commissioning described in chapter below the device appears with all 
  - battery level in percent
  - uptime since last boot (very useful function for tracking devices)
 
- ![](./pics/device.png)
- Now you can use these services in HA Automation routines, e.g. trigger condition like motion sensor on the picture and siren turns on.
+ ![](./pics/device.png)  
+  Now you can use these services in HA Automation routines, e.g. trigger condition like motion sensor on the picture and siren turns on.
 
 ## CoAP-over-Thread Interaction for Dummies: Push vs. Poll 
 
