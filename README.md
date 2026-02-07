@@ -1,19 +1,19 @@
 
-# Fast way to integrate low-power devices running Zephyr RTOS into Home Assistant
+# Easy way to integrate low-power devices running Zephyr RTOS into Home Assistant
 
-This project does not compete with Matter ecosystem, it should show how to __add ultra low-power devices__ into existing PHY-layer and with similar UX, so that the user commissions new device to existing Thread network safely using NFC of his smartphone and the __device appears in Home Assistant UI automatically__.
+Proposed approach does not compete with Matter protocol, it should show how to __add ultra low-power devices__ into available Thread PHY-layer below Matter and with similar UX, so that the user commissions new device to deployed Thread network safely using __NFC in his smartphone__ and the __device appears in Home Assistant UI automatically__. So it reuses available hardware/software and is much simpler to program than Matter stack. See blue blocks below showing the new code written.
 
 ![](./pics/iot_system_architecture.png  "CoAP and Matter over same PHY")
 
-## Motivation: Add modern low-power CoAP over Thread connectivity to any device and integrate it into HA OS
+## Motivation: CoAP-over-Thread connectivity is simpler than Matter-over-Thread
 
 **Thread protocol** is extremely power efficient compared to WiFi, it builds a solid PHY with IPv6-based mesh networking Layer for devices that don't need high bandwidth and work for __many months or even 1-2 years on battery__.
 
 **Matter protocol** __on top of Thread__ creates a safe application layer with a straightforward service discovery and UI on all available home automation platforms. Programming Matter is complicated for DIY, even the installation of the toolchain is a challenge. Nordic provides a few Matter examples, but the Matter itself is not yet even planned for mainstream Zephyr RTOS integration. 
 
-**CoAP (RFC 7252 Constrained Application Protocol)** was invented before Matter, it has no pre-defined device classes (light, binary sensor) and no commissioning concept to integrate the new gadget into existing Thread network. But it is simple and has both Python and Zephyr support, what makes CoAP over Thread more attractive for DIY development.
+**CoAP (RFC 7252 Constrained Application Protocol)** was invented before Matter, it is UDP-based and stateless, has no pre-defined device classes (light, binary sensor) and no commissioning concept to integrate the new gadget into existing Thread network. But it is simple and has both Python and Zephyr support, what makes CoAP over Thread more attractive for DIY development. The application layer should be built on top of CoAP and it exists: Home Assistant has automatic **service discovery** for many types of devices, so one should push the proper messages to MQTT Add-on to register the new devices. 
 
-Home Assistant has automatic **service discovery** for many types of devices, so one can push the proper messages to MQTT Add-on to register the new devices. The proposed architecture consists of two parts:
+The proposed architecture consists of two parts:
 
 - **CoAP Client with Data Model** as a Bridge between existing OpenThread Add-on and MQTT Add-on, it is a container one can download from [GitHub](https://github.com/Rosfly/thread-coap-bridge-addon) and install on HA OS in 1 minute. It is __not a simple relais__ between Thread and MQTT, it manages a small database for device commissioning and decommissioning
 
@@ -21,13 +21,46 @@ Home Assistant has automatic **service discovery** for many types of devices, so
 
 The shown architecture integrates both CoAP-over-Thread and Matter-over-Thread on one Home Assistant host, all devices run on the same Thread PHY and over same border router. 
 
+## Automatic Discovery after Commissioning
+
+After easy commissioning described in chapter below the device appears with all its functions in Home Assistant UI:
+ - buttons
+ - leds (in this application used for alarm on/off)
+ - battery level in voltage
+ - battery level in percent
+ - uptime since last boot (very useful function for tracking devices)
+
+ ![](./pics/device.png)
+ Now you can use these services in HA Automation routines, e.g. trigger condition like motion sensor on the picture and siren turns on.
+
+## CoAP-over-Thread Interaction for Dummies: Push vs. Poll 
+
+CoAP has two established mechanisms:
+ 1. __"Polling Mechanism"__ CoAP Client (on HA) requests CoAP Server (target board) with GET/PUT for sensor/actor actions, the Server's Thread radio should be ON at that time, otherwise there is no chance of communication. There is NO mechanism of waking up a sleeping Thread device!  
+ 1.1 Thread __Sleepy End Device (SED)__ wakes up every N seconds/hours and polls the Thread Leader to provide him the stored requests (Thread leader has his cash to store incoming requests)  
+ 1.2 CoAP client gets all the requested information during that wake-up period, so the Thread device can now go back to power saving sleep  
+ 1.3 Example: LED turn-on command takes worst-case N seconds/hours, this time is defined by Thread device itself, nobody else can influence that, there is no negotiations on that
+
+ 2. __"Observe/Push Mechanism"__ CoAP Client can register the resource of interest  
+ 2.1 The CoAP server responds with the current state of the resource and includes an Observe option with a sequence number. This establishes the observation relationship    
+ 2.2 Whenever the resource changes, the CoAP server sends a notification (a new response). But the layer below CoAP - Thread - knows nothing about that relationship.   
+ 2.3 Zephyr Code in this example wakes up the Thread radio on Button (sw0 and sw1) event interrupt and the CoAP server pushes the notification to client
+
+That solves a common misunderstanding: how can a sleeping device with long downtime be fast in case of emergency, e.g. in case of alarm/motion/occupancy sensor should push its notification immediately on event. This is a nice example of how CoAP-over-Thread saves the battery power.  
+
 ## Physical Setup
 
 The target embedded device is the Xiao Seeed nRF54L15 board with soldered JST battery connector and NFC Antenna attached to NFC pads. This board has Thread-capable radio in MCU and on-board 2.4GHz Antenna.
 
 ![](./pics/nfc_setup.png)
 
+The board is integrated into a cheap siren system with PIR sensor, so nRF54L15 can only trigger alarm, it does not change any functions.
 
+![](./pics/solder.png)
+
+The system is mounted together into alarm box
+
+![](./pics/fixed.png)
 
 ## NFC Commissioning Process
 
@@ -35,7 +68,7 @@ The firmware is flashed using OpenOCD over USB, no additional hardware needed. T
 
 __Prerequisites:__
 
-- running Home Assistant (HAOS) with 3 Add-ons installed (MQTT, OpenThread and CoAP Bridge), Terminal Add-on recommended for debugging  
+- running Home Assistant (HAOS) with 3 Add-ons installed and running (MQTT, OpenThread and CoAP Bridge), Terminal Add-on recommended for debugging  
 - available Thread network, so an OpenThread border router (OTBR) like ZBT-2 on the diagram or even another nRF54L15 board with flashed OTBR image from Nordic samples (it was successfully tested as part of this project)
 - App like NFC Tools for initial commissioning over NFC-capable smartphone
 - HomeAsisstant Companion App installed on same smartphone
