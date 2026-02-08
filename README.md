@@ -3,7 +3,13 @@
 
 Proposed approach does not compete with Matter protocol, it should show how to __add ultra low-power devices__ into available Thread PHY-layer below Matter and with similar UX, so that the user commissions new device to deployed Thread network safely using __NFC in his smartphone__ and the __device appears in Home Assistant UI automatically__. So it reuses available hardware/software and is much simpler to program than Matter stack. See blue blocks below showing the new code written.
 
-![](./pics/iot_system_architecture.png  "CoAP and Matter over same PHY")
+![](./pics/iot_system_architecture.png  "CoAP and Matter over same PHY")  
+
+**Target board for CoAP Server**: Xiao Seeed nRF54L15  
+**nRF Connect SDK**: v3.2.1  
+**Zephyr Version**: v4.3, zephyr-sdk-0.17.4  
+**Home Assistant**: Core 2026.2.1 (all add-ons as of 2/26 updated)  
+**Status**: ⚠️ **HOBBYIST PROOF-OF-CONCEPT** 
 
 ## Motivation: CoAP-over-Thread connectivity is simpler than Matter-over-Thread
 
@@ -527,6 +533,8 @@ Thread dataset persistence is handled automatically:
 - `otDatasetSetActiveTlvs()` saves to NVS through the Settings subsystem
 - On boot, OpenThread loads the dataset from NVS automatically
 
+Software re-flash does not delete available dataset in NVS, so erase the MCU completely in case of debugging.  
+
 ## File Structure
 
 | File | Purpose |
@@ -545,16 +553,17 @@ Thread dataset persistence is handled automatically:
 ## Future Enhancements
 
 - [x] Hold button on boot to clear dataset and re-enter NFC mode
-- [ ] QR code fallback for phones without NFC
-- [ ] BLE commissioning as alternative method
+- [ ] Encryption on CoAP layer (now only Thread encrypted)
+- [ ] Add IPEX Antenna to target board to improve radio link  
+
+- [ ] BLE commissioning like Matter as alternative method
 - [ ] Home Assistant add-on to generate NFC tags with dataset
 
-Review issues: __One medium issue__ — race condition in src/coap_observe.c:
+## Code Review issues  
+__One medium issue__ — race condition in `src/coap_observe.c:
 The observer list (resource->observers[], resource->observer_count) is accessed from both CoAP request callbacks and button/LED notification paths without synchronization. In practice this is low-risk because OpenThread serializes most of these callbacks, but adding a k_mutex to struct coap_observe_resource would be the clean fix.
 
-__Minor:__
-
-src/coap_discovery.c builds the .well-known/core response into a 128-byte buffer without checking snprintf return for truncation. Currently fits, but fragile if more resources are added.
+__Minor:__ src/coap_discovery.c` builds the .well-known/core response into a 128-byte buffer without checking snprintf return for truncation. Currently fits, but fragile if more resources are added.
 
 ## References
 
