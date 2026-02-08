@@ -1,7 +1,7 @@
 
 # Easy way to integrate low-power devices running Zephyr RTOS into Home Assistant
 
-Proposed approach does not compete with Matter protocol, it should show how to __add ultra low-power devices__ into available Thread PHY-layer below Matter and with similar UX, so that the user commissions new device to deployed Thread network safely using __NFC in his smartphone__ and the __device appears in Home Assistant UI automatically__. So it reuses available hardware/software and is much simpler to program than Matter stack. See blue blocks below showing the new code written.
+Proposed approach does not compete with Matter protocol, it should show how to __add ultra low-power devices__ into available Thread PHY-layer below Matter and with similar UX, so that the user commissions new device to deployed Thread network safely using __NFC in his smartphone__ and the __device appears in Home Assistant UI automatically__. So it reuses available hardware/software and is much simpler to program than Matter stack. See <span style="color:blue">__blue blocks__</span> below showing the presented application code.
 
 ![](./pics/iot_system_architecture.png  "CoAP and Matter over same PHY")  
 
