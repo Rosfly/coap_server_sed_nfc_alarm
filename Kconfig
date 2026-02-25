@@ -39,6 +39,13 @@ config OT_COAP_SAMPLE_SHELL
 	  and button state from the command line. Disable for
 	  production builds to save ~150 lines of code.
 
+config DEFAULT_ANTENNA_EXTERNAL
+	bool "Use external IPEX antenna as default"
+	default n
+	help
+	  Drive the RF switch (P2.03 power, P2.05 select) at boot to select
+	  the external IPEX antenna instead of the ceramic on-board antenna.
+
 config OT_COAP_NFC_COMMISSION
 	bool "Enable NFC-based Thread commissioning"
 	default y

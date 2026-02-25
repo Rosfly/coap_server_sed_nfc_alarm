@@ -27,8 +27,9 @@ LOG_MODULE_REGISTER(coap);
 #include "uptime.h"
 #endif /* CONFIG_OT_COAP_SAMPLE_UPTIME */
 
-#ifdef CONFIG_OT_COAP_NFC_COMMISSION
 #include <zephyr/drivers/gpio.h>
+
+#ifdef CONFIG_OT_COAP_NFC_COMMISSION
 #include <openthread/dataset.h>
 #include <openthread/instance.h>
 #include <openthread/thread.h>
@@ -51,6 +52,24 @@ int main(void)
 	if (ret) {
 		return ret;
 	}
+
+#ifdef CONFIG_DEFAULT_ANTENNA_EXTERNAL
+	/* Enable RF switch power (P2.03 HIGH) and select external IPEX antenna (P2.05 HIGH).
+	 * Both pins are normally managed by regulator-fixed nodes (rfsw_pwr/rfsw_ctl)
+	 * which are disabled in the overlay so we drive them directly here.
+	 */
+	{
+		const struct device *gpio2 = DEVICE_DT_GET(DT_NODELABEL(gpio2));
+
+		if (device_is_ready(gpio2)) {
+			gpio_pin_configure(gpio2, 3, GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH); /* rfsw_pwr */
+			gpio_pin_configure(gpio2, 5, GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH); /* rfsw_ctl */
+			LOG_INF("Antenna: external IPEX");
+		} else {
+			LOG_ERR("gpio2 not ready");
+		}
+	}
+#endif /* CONFIG_DEFAULT_ANTENNA_EXTERNAL */
 
 #ifdef CONFIG_OT_COAP_NFC_COMMISSION
 	/* Check if re-commissioning requested or device needs NFC commissioning */

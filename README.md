@@ -144,6 +144,50 @@ VBAT ─── TPS22916C ─── R5(10K) ───┬─── P1.14 (AIN7)
 - **ADC**: 12-bit, 4x oversampling, 1/4 gain
 - **Power saving**: TPS22916C disables divider when not measuring
 
+## External IPEX Antenna
+
+The Seeed XIAO nRF54L15 board includes an on-board ceramic 2.4 GHz antenna and an IPEX connector for an external antenna. An on-board RF switch (controlled via P2.03 and P2.05) routes the radio signal to one of the two paths.
+
+### Hardware
+
+The RF switch is controlled by two GPIO pins on Port 2:
+
+| Signal | Pin | Logic | Meaning |
+|--------|-----|-------|---------|
+| `rfsw_pwr` | P2.03 | HIGH = switch powered | Must be HIGH for the switch to operate |
+| `rfsw_ctl` | P2.05 | HIGH = external IPEX | LOW = ceramic on-board antenna |
+
+Both pins are defined in the board DTS as `regulator-fixed` nodes with `regulator-boot-on`. Without `CONFIG_REGULATOR` (which is not set in this project — enabling it would brick the nRF54L15 by re-initializing internal CPU voltage regulators), neither pin is driven at reset and the radio falls back to the ceramic antenna.
+
+To use the external IPEX antenna both pins must be explicitly driven from application code. The overlay disables both regulator nodes so the application owns the pins:
+
+```dts
+/* boards/xiao_nrf54l15_nrf54l15_cpuapp.overlay */
+&rfsw_pwr { status = "disabled"; };  /* release P2.03 */
+&rfsw_ctl { status = "disabled"; };  /* release P2.05 */
+```
+
+### Configuration
+
+Enable external IPEX antenna as the boot default in `prj.conf`:
+
+```kconfig
+CONFIG_DEFAULT_ANTENNA_EXTERNAL=y
+```
+
+When enabled, `main.c` drives both pins immediately after `coap_init()`:
+
+```c
+gpio_pin_configure(gpio2, 3, GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH); /* rfsw_pwr: switch on */
+gpio_pin_configure(gpio2, 5, GPIO_OUTPUT | GPIO_OUTPUT_INIT_HIGH); /* rfsw_ctl: external */
+```
+
+Set `CONFIG_DEFAULT_ANTENNA_EXTERNAL=n` (or remove the line) to revert to the ceramic antenna — no other changes needed.
+
+### Antenna Placement
+
+Connect an IPEX-to-SMA pigtail to the IPEX connector on the board and mount the external antenna away from the PCB. For a device installed inside a plastic enclosure this can significantly improve Thread RSSI and reduce packet loss, especially if the ceramic antenna is shielded by the enclosure wall or a metal chassis.
+
 ## Building
 
 **Important**: This project requires **nRF Connect SDK**, not mainline Zephyr. The NFC libraries are only available in nRF Connect SDK.
@@ -554,7 +598,7 @@ Software re-flash does not delete available dataset in NVS, so erase the MCU com
 
 - [x] Hold button on boot to clear dataset and re-enter NFC mode
 - [ ] Encryption on CoAP layer (now only Thread encrypted)
-- [ ] Add IPEX Antenna to target board to improve radio link  
+- [x] Add IPEX Antenna to target board to improve radio link
 
 - [ ] BLE commissioning like Matter as alternative method
 - [ ] Home Assistant add-on to generate NFC tags with dataset

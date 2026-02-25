@@ -43,6 +43,17 @@
 	gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
 };
 
+/* Release RF switch pins from the regulator driver so main.c drives them directly.
+ * P2.03 (rfsw_pwr) HIGH = switch powered, P2.05 (rfsw_ctl) HIGH = external IPEX antenna.
+ */
+&rfsw_pwr {
+	status = "disabled";
+};
+
+&rfsw_ctl {
+	status = "disabled";
+};
+
 &radio {
 	status = "okay";
 };
